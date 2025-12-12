@@ -1,0 +1,19 @@
+{
+  "mcpServers": {
+    "your-spotify": {
+      "command": "node",
+      "args": [
+        "/path/to/your-spotify-mcp/build/index.js"
+      ],
+      "env": {
+        "YOUR_SPOTIFY_API_URL": "https://your-spotify-api.example.com",
+        "YOUR_SPOTIFY_TOKEN": "ys_YOUR_TOKEN_HERE",
+
+        "SPOTIFY_CLIENT_ID": "your_spotify_client_id",
+        "SPOTIFY_CLIENT_SECRET": "your_spotify_client_secret",
+        "SPOTIFY_ACCESS_TOKEN": "your_spotify_access_token",
+        "SPOTIFY_REFRESH_TOKEN": "your_spotify_refresh_token"
+      }
+    }
+  }
+}
