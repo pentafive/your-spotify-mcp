@@ -16,12 +16,14 @@
     "spotify",
     "your-spotify",
     "analytics",
-    "model-context-protocol"
+    "model-context-protocol",
+    "toon"
   ],
   "author": "Jonathan Down",
   "license": "Apache-2.0",
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.0.0",
+    "@toon-format/toon": "^1.0.0",
     "axios": "^1.6.0",
     "bottleneck": "^2.19.5",
     "zod": "^3.22.0"
