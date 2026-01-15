@@ -26,9 +26,9 @@ export const getDiscoveryInsightsInputSchema = z.object({
     .number()
     .int()
     .min(1)
-    .max(50)
-    .default(20)
-    .describe('Number of discoveries to return'),
+    .max(30)
+    .default(10)
+    .describe('Number of discoveries to return (1-30)'),
 });
 
 export type GetDiscoveryInsightsInput = z.infer<typeof getDiscoveryInsightsInputSchema>;
@@ -89,10 +89,10 @@ Example queries:
       },
       limit: {
         type: 'number',
-        description: 'Number of discoveries to return (1-50)',
+        description: 'Number of discoveries to return (1-30)',
         minimum: 1,
-        maximum: 50,
-        default: 20,
+        maximum: 30,
+        default: 10,
       },
     },
     required: ['start_date'],

@@ -1,5 +1,9 @@
 # Your Spotify MCP Server
 
+[![CI](https://github.com/pentafive/your-spotify-mcp/actions/workflows/ci.yml/badge.svg)](https://github.com/pentafive/your-spotify-mcp/actions/workflows/ci.yml)
+[![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
+[![Node.js](https://img.shields.io/badge/Node.js-18%2B-green.svg)](https://nodejs.org/)
+
 A Model Context Protocol (MCP) server that connects AI assistants to [Your Spotify](https://github.com/Yooooomi/your_spotify)'s analytics API and Spotify's Web API.
 
 **Requires:** A self-hosted [Your Spotify](https://github.com/Yooooomi/your_spotify) instance for unlimited listening history analytics.
@@ -11,8 +15,10 @@ A Model Context Protocol (MCP) server that connects AI assistants to [Your Spoti
 | Listening history | Last 50 tracks | **Unlimited** |
 | Custom time ranges | No | **Yes** (any period) |
 | Play count stats | No | **Yes** |
-| Collaborative analytics | No | **Yes** (affinity) |
+| Collaborative analytics | No | **Yes** (affinity)* |
 | Custom Wrapped | Annual only | **Any time period** |
+
+*\*Affinity analysis requires authenticated web session; see [Known Issues](TOOLS.md#known-issues)*
 
 ## Features
 
@@ -30,11 +36,24 @@ A Model Context Protocol (MCP) server that connects AI assistants to [Your Spoti
 - **get_artist_rank** - Your ranking for an artist
 - **get_track_rank** - Your ranking for a track
 
-### Tier 3-5: Power Features
-- Listening pattern analysis
-- Export functionality
-- Spotify playback control
-- Playlist management
+### Tier 3: Power Analytics
+- **analyze_listening_patterns** - Peak listening times, habits
+- **get_discovery_insights** - New music discoveries
+- **compare_listening_periods** - Period-over-period comparisons
+- **export_listening_data** - Export in JSON, CSV, or summary format
+
+### Tier 4: Account Management
+- **get_listening_summary** - Overview of listening habits
+- **update_user_settings** - Manage account settings
+- **generate_public_share_link** - Share your stats
+
+### Tier 5: Spotify Control (Optional)
+*Requires Spotify API credentials - see setup below*
+- **control_playback** - Play, pause, skip, seek
+- **manage_playlist** - Create and modify playlists
+- **search_spotify** - Search Spotify catalog
+
+> **Note:** Tiers 1-4 (18 tools) work with just Your Spotify. Tier 5 (10 additional tools) requires separate Spotify Web API credentials.
 
 ## Token-Efficient Output (TOON)
 
@@ -117,6 +136,8 @@ Add to your Claude Desktop config (`~/.config/Claude/claude_desktop_config.json`
 }
 ```
 
+> **More configurations:** See [examples/](examples/) for Claude Code, Gemini, and other client configs.
+
 ## Usage Examples
 
 Once configured, you can ask Claude:
@@ -161,24 +182,33 @@ src/
 
 ## Roadmap
 
-### Current (v0.1.x)
-- [x] Core analytics tools (Tier 1)
-- [x] TOON format support
+### Completed (v0.2.x)
+- [x] Core analytics tools (Tier 1) - 5 tools
+- [x] Enhanced analytics (Tier 2) - Custom Wrapped, Affinity, Rankings
+- [x] Power analytics (Tier 3) - Patterns, Comparisons, Export
+- [x] Account management (Tier 4) - Settings, Sharing
+- [x] TOON format support for token-efficient output
 - [x] Public token authentication
 
-### Planned (v0.2.x)
-- [ ] Enhanced analytics (Tier 2) - Custom Wrapped, Affinity
-- [ ] Power analytics (Tier 3)
+### Optional (v0.2.x)
+- [x] Spotify playback control (Tier 5) - Requires Spotify API credentials
 
 ### Future
-- [ ] Spotify playback control (Tier 5)
 - [ ] Dedicated API token authentication (contribution to Your Spotify upstream)
-- [ ] Rate limiting improvements
+- [ ] Enhanced rate limiting
+- [ ] WebSocket support for real-time updates
 
 ## Related Projects
 
 - [Your Spotify](https://github.com/Yooooomi/your_spotify) - Self-hosted Spotify tracking dashboard (required)
 - [TOON Format](https://github.com/toon-format/toon) - Token-efficient data format for LLMs
+
+## Documentation
+
+- **[Usage Guide](docs/USAGE_GUIDE.md)** - Practical examples and workflows
+- **[Tools Reference](docs/TOOLS.md)** - Complete API reference for all 28 tools
+- **[Architecture](docs/ARCHITECTURE.md)** - System design documentation
+- **[Configuration Examples](examples/)** - Ready-to-use configs for Claude, Gemini, etc.
 
 ## Contributing
 

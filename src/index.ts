@@ -12,6 +12,7 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { z } from 'zod';
+import { encode as toonEncode } from '@toon-format/toon';
 
 import { createYourSpotifyClient, YourSpotifyClient } from './lib/your-spotify-client.js';
 import { createSpotifyClient, SpotifyClient } from './lib/spotify-client.js';
@@ -71,7 +72,7 @@ import {
 
 const SERVER_INFO = {
   name: 'your-spotify-mcp',
-  version: '0.2.0',
+  version: '0.2.3',
 };
 
 const SERVER_CAPABILITIES = {
@@ -97,11 +98,22 @@ function registerYourSpotifyTool(
       try {
         const validatedInput = schema.parse(args);
         const result = await handler(validatedInput, service);
+        // Use TOON format when requested, otherwise JSON
+        const outputFormat = validatedInput.output_format || 'toon';
+        const formatted = outputFormat === 'toon'
+          ? toonEncode(result)
+          : JSON.stringify(result, null, 2);
         return {
-          content: [{ type: 'text' as const, text: JSON.stringify(result, null, 2) }],
+          content: [{ type: 'text' as const, text: formatted }],
         };
       } catch (error) {
-        const message = error instanceof Error ? error.message : 'Unknown error';
+        // Handle both Error instances and YourSpotifyError objects
+        let message = 'Unknown error';
+        if (error instanceof Error) {
+          message = error.message;
+        } else if (error && typeof error === 'object' && 'message' in error) {
+          message = String((error as { message: unknown }).message);
+        }
         return {
           content: [{ type: 'text' as const, text: `Error: ${message}` }],
           isError: true,
@@ -126,11 +138,22 @@ function registerSpotifyTool(
       try {
         const validatedInput = schema.parse(args);
         const result = await handler(validatedInput, client);
+        // Use TOON format when requested, otherwise JSON
+        const outputFormat = validatedInput.output_format || 'toon';
+        const formatted = outputFormat === 'toon'
+          ? toonEncode(result)
+          : JSON.stringify(result, null, 2);
         return {
-          content: [{ type: 'text' as const, text: JSON.stringify(result, null, 2) }],
+          content: [{ type: 'text' as const, text: formatted }],
         };
       } catch (error) {
-        const message = error instanceof Error ? error.message : 'Unknown error';
+        // Handle both Error instances and YourSpotifyError objects
+        let message = 'Unknown error';
+        if (error instanceof Error) {
+          message = error.message;
+        } else if (error && typeof error === 'object' && 'message' in error) {
+          message = String((error as { message: unknown }).message);
+        }
         return {
           content: [{ type: 'text' as const, text: `Error: ${message}` }],
           isError: true,
@@ -178,7 +201,7 @@ async function main(): Promise<void> {
   // Create MCP server
   const server = new McpServer(SERVER_INFO, {
     capabilities: SERVER_CAPABILITIES,
-    instructions: `Your Spotify MCP Server v0.2.0 - Complete 28-tool suite
+    instructions: `Your Spotify MCP Server v0.2.3 - Complete 28-tool suite
 
 Tiers 1-4 (Your Spotify API - Analytics & Management):
 - Query unlimited listening history

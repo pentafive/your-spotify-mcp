@@ -35,9 +35,9 @@ export const exportListeningDataInputSchema = z.object({
     .number()
     .int()
     .min(1)
-    .max(1000)
-    .default(100)
-    .describe('Maximum items to export'),
+    .max(30)
+    .default(10)
+    .describe('Maximum items to export (1-30)'),
 });
 
 export type ExportListeningDataInput = z.infer<typeof exportListeningDataInputSchema>;
@@ -104,10 +104,10 @@ Example queries:
       },
       limit: {
         type: 'number',
-        description: 'Maximum items to export (1-1000)',
+        description: 'Maximum items to export (1-30)',
         minimum: 1,
-        maximum: 1000,
-        default: 100,
+        maximum: 30,
+        default: 10,
       },
     },
     required: [],
@@ -122,25 +122,53 @@ export async function handleExportListeningData(
   input: ExportListeningDataInput,
   service: YourSpotifyService
 ): Promise<ExportListeningDataOutput> {
+  const format = input.format || 'summary';
+
+  // Don't pass format to service - it's handled at tool level
   const response = await service.exportListeningData({
     start_date: input.start_date,
     end_date: input.end_date,
-    format: input.format,
     include: input.include,
     limit: input.limit,
   });
 
+  const summary = {
+    total_plays: response.summary.total_plays,
+    total_hours: Math.round(response.summary.total_hours * 10) / 10,
+    unique_tracks: response.summary.unique_tracks,
+    unique_artists: response.summary.unique_artists,
+  };
+
+  // Handle format at tool level
+  let data: unknown;
+  if (format === 'summary') {
+    // Summary format: no raw data, just statistics
+    data = null;
+  } else if (format === 'csv') {
+    // CSV format: convert top tracks and artists to CSV strings
+    const rawData = response.data as { top_tracks: any[]; top_artists: any[] };
+    const tracksCsv = ['rank,name,artist,plays']
+      .concat((rawData.top_tracks || []).map((t: any, i: number) =>
+        `${i + 1},"${(t.track?.name || t.name || '').replace(/"/g, '""')}","${(t.artist?.name || '').replace(/"/g, '""')}",${t.count || 0}`
+      ))
+      .join('\n');
+    const artistsCsv = ['rank,name,plays']
+      .concat((rawData.top_artists || []).map((a: any, i: number) =>
+        `${i + 1},"${(a.artist?.name || a.name || '').replace(/"/g, '""')}",${a.count || 0}`
+      ))
+      .join('\n');
+    data = { tracks_csv: tracksCsv, artists_csv: artistsCsv };
+  } else {
+    // JSON format: return full data
+    data = response.data;
+  }
+
   return {
     success: true,
-    format: input.format || 'summary',
+    format,
     period: response.period,
-    data: response.data,
-    summary: {
-      total_plays: response.summary.total_plays,
-      total_hours: Math.round(response.summary.total_hours * 10) / 10,
-      unique_tracks: response.summary.unique_tracks,
-      unique_artists: response.summary.unique_artists,
-    },
-    message: `Exported ${input.format || 'summary'} data: ${response.summary.total_plays} plays, ${response.summary.unique_tracks} tracks, ${response.summary.unique_artists} artists.`,
+    data,
+    summary,
+    message: `Exported ${format} data: ${summary.total_plays} plays, ${summary.unique_tracks} tracks, ${summary.unique_artists} artists.`,
   };
 }

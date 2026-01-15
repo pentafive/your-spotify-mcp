@@ -147,7 +147,8 @@ export class YourSpotifyService {
     const artist = rawData.artist || {};
     const album = rawData.album || {};
     const firstLast = rawData.firstLast || {};
-    const bestPeriod = rawData.bestPeriod;
+    const bestPeriod = rawData.bestPeriod?.[0]; // bestPeriod is an array
+    const total = rawData.total || {};
 
     return {
       track: {
@@ -164,8 +165,8 @@ export class YourSpotifyService {
         explicit: track.explicit || false,
         uri: `spotify:track:${trackId}`,
       },
-      total_plays: rawData.count || 0,
-      total_duration_ms: rawData.duration_ms || 0,
+      total_plays: total.count || 0,
+      total_duration_ms: (total.count || 0) * (track.duration_ms || 180000), // Estimate from play count
       first_played: firstLast.first?.played_at || '',
       last_played: firstLast.last?.played_at || '',
       average_plays_per_day: 0,
@@ -184,7 +185,12 @@ export class YourSpotifyService {
 
     const artist = rawData.artist || {};
     const firstLast = rawData.firstLast || {};
-    const songs = rawData.songs || [];
+    const total = rawData.total || {};
+    const mostListened = rawData.mostListened || []; // API uses "mostListened" not "songs"
+
+    // Calculate duration from play count * average song length (~3.5 min)
+    const totalPlays = total.count || 0;
+    const estimatedDurationMs = totalPlays * 210000; // ~3.5 minutes per song
 
     return {
       artist: {
@@ -192,24 +198,24 @@ export class YourSpotifyService {
         name: artist.name || 'Unknown',
         genres: artist.genres,
       },
-      total_plays: rawData.count || 0,
-      total_duration_ms: rawData.duration_ms || 0,
+      total_plays: totalPlays,
+      total_duration_ms: estimatedDurationMs,
       first_played: firstLast.first?.played_at || '',
       last_played: firstLast.last?.played_at || '',
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      top_tracks: songs.slice(0, 10).map((s: any) => ({
+      top_tracks: mostListened.slice(0, 10).map((s: any) => ({
         track: {
           id: s.track?.id || s._id || '',
           name: s.track?.name || s.name || 'Unknown',
           artists: [{ id: artistId, name: artist.name || '' }],
-          album: { id: '', name: '', release_date: '' },
+          album: { id: s.album?.id || '', name: s.album?.name || '', release_date: '' },
           duration_ms: s.track?.duration_ms || s.duration_ms || 0,
           explicit: false,
           uri: `spotify:track:${s.track?.id || s._id || ''}`,
         },
         play_count: s.count || 0,
       })),
-      listening_time_hours: Math.round((rawData.duration_ms || 0) / 3600000 * 10) / 10,
+      listening_time_hours: Math.round(estimatedDurationMs / 3600000 * 10) / 10,
     };
   }
 
@@ -235,24 +241,27 @@ export class YourSpotifyService {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const rawData = await this.client.get<any[]>('/spotify/top/songs', apiParams);
 
+    // Map and sort by play count descending
+    const tracks = (rawData || []).map(item => ({
+      track: {
+        id: item.track?.id || item._id || '',
+        name: item.track?.name || 'Unknown',
+        artists: [{ id: item.artist?.id || '', name: item.artist?.name || 'Unknown' }],
+        album: { id: item.album?.id || '', name: item.album?.name || '', release_date: '' },
+        duration_ms: item.track?.duration_ms || 0,
+        explicit: false,
+        uri: `spotify:track:${item.track?.id || item._id || ''}`,
+      },
+      play_count: item.count || 0,
+    })).sort((a, b) => b.play_count - a.play_count);
+
     return {
-      tracks: (rawData || []).map(item => ({
-        track: {
-          id: item.track?.id || item._id || '',
-          name: item.track?.name || 'Unknown',
-          artists: [{ id: item.artist?.id || '', name: item.artist?.name || 'Unknown' }],
-          album: { id: item.album?.id || '', name: item.album?.name || '', release_date: '' },
-          duration_ms: item.track?.duration_ms || 0,
-          explicit: false,
-          uri: `spotify:track:${item.track?.id || item._id || ''}`,
-        },
-        play_count: item.count || 0,
-      })),
+      tracks,
       period: {
         start: params.start_date || '2000-01-01',
         end: params.end_date || new Date().toISOString().split('T')[0],
       },
-      total_count: (rawData || []).length,
+      total_count: tracks.length,
     };
   }
 
@@ -278,21 +287,24 @@ export class YourSpotifyService {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const rawData = await this.client.get<any[]>('/spotify/top/artists', apiParams);
 
+    // Map and sort by play count descending
+    const artists = (rawData || []).map(item => ({
+      artist: {
+        id: item.artist?.id || item._id || '',
+        name: item.artist?.name || 'Unknown',
+        genres: item.artist?.genres,
+      },
+      play_count: item.count || 0,
+      listening_time_ms: item.duration_ms || 0,
+    })).sort((a, b) => b.play_count - a.play_count);
+
     return {
-      artists: (rawData || []).map(item => ({
-        artist: {
-          id: item.artist?.id || item._id || '',
-          name: item.artist?.name || 'Unknown',
-          genres: item.artist?.genres,
-        },
-        play_count: item.count || 0,
-        listening_time_ms: item.duration_ms || 0,
-      })),
+      artists,
       period: {
         start: params.start_date || '2000-01-01',
         end: params.end_date || new Date().toISOString().split('T')[0],
       },
-      total_count: (rawData || []).length,
+      total_count: artists.length,
     };
   }
 
@@ -309,15 +321,78 @@ export class YourSpotifyService {
     limit?: number;
     offset?: number;
   }): Promise<ListeningHistoryResponse> {
-    // Only artist search is available
-    if (params.type === 'artist' || !params.type) {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const artists = await this.client.get<any[]>(`/artist/search/${encodeURIComponent(params.query)}`);
+    // For artist search, find matching artists and get their top tracks
+    if (params.type === 'artist') {
+      // Artist search API requires at least 3 characters
+      // If query is shorter, fall back to local filtering
+      if (params.query.length >= 3) {
+        try {
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const artists = await this.client.get<any[]>(`/artist/search/${encodeURIComponent(params.query)}`);
 
-      // Return as search results (not history entries)
+          if (artists && artists.length > 0) {
+            // Get top tracks and filter by the found artists
+            const topTracks = await this.getTopTracks({
+              start_date: params.start_date,
+              end_date: params.end_date,
+              limit: 30,
+            });
+
+            // Get set of found artist IDs for efficient lookup (try both id and _id fields)
+            const artistIds = new Set(artists.flatMap((a: any) => [a.id, a._id].filter(Boolean)));
+            // Also get artist names for fallback matching
+            const artistNames = new Set(artists.map((a: any) => (a.name || '').toLowerCase()).filter(Boolean));
+
+            // Filter tracks by found artists (try ID match first, then name match)
+            const allFiltered = topTracks.tracks.filter(t =>
+              t.track.artists.some(a =>
+                artistIds.has(a.id) || artistNames.has(a.name.toLowerCase())
+              )
+            );
+
+            // If we got results, return them
+            if (allFiltered.length > 0) {
+              const filtered = allFiltered.slice(params.offset || 0, (params.offset || 0) + (params.limit || 10));
+              return {
+                items: filtered.map(t => ({
+                  id: t.track.id,
+                  track: t.track,
+                  played_at: '',
+                  duration_ms: t.track.duration_ms,
+                })),
+                total: allFiltered.length,
+                offset: params.offset || 0,
+                limit: params.limit || 10,
+              };
+            }
+            // If no results from ID/name matching, fall through to local filtering
+          }
+        } catch {
+          // If artist search fails, fall through to local filtering
+        }
+      }
+
+      // Fall back to local artist name filtering
+      const topTracks = await this.getTopTracks({
+        start_date: params.start_date,
+        end_date: params.end_date,
+        limit: 30,
+      });
+
+      const query = params.query.toLowerCase();
+      const allFiltered = topTracks.tracks.filter(t =>
+        t.track.artists.some(a => a.name.toLowerCase().includes(query))
+      );
+      const filtered = allFiltered.slice(params.offset || 0, (params.offset || 0) + (params.limit || 10));
+
       return {
-        items: [],
-        total: (artists || []).length,
+        items: filtered.map(t => ({
+          id: t.track.id,
+          track: t.track,
+          played_at: '',
+          duration_ms: t.track.duration_ms,
+        })),
+        total: allFiltered.length,
         offset: params.offset || 0,
         limit: params.limit || 10,
       };
@@ -328,14 +403,15 @@ export class YourSpotifyService {
     const topTracks = await this.getTopTracks({
       start_date: params.start_date,
       end_date: params.end_date,
-      limit: 100,
+      limit: 30,
     });
 
     const query = params.query.toLowerCase();
-    const filtered = topTracks.tracks.filter(t =>
+    const allFiltered = topTracks.tracks.filter(t =>
       t.track.name.toLowerCase().includes(query) ||
       t.track.artists.some(a => a.name.toLowerCase().includes(query))
-    ).slice(0, params.limit || 10);
+    );
+    const filtered = allFiltered.slice(params.offset || 0, (params.offset || 0) + (params.limit || 10));
 
     return {
       items: filtered.map(t => ({
@@ -344,7 +420,7 @@ export class YourSpotifyService {
         played_at: '',
         duration_ms: t.track.duration_ms,
       })),
-      total: filtered.length,
+      total: allFiltered.length,
       offset: params.offset || 0,
       limit: params.limit || 10,
     };
@@ -376,37 +452,54 @@ export class YourSpotifyService {
     const apiParams = { start: params.start_date, end: params.end_date };
 
     // Fetch all data in parallel
-    const [topTracks, topArtists, topAlbums, hourData, songsPer, listenedTo] = await Promise.all([
+    // Note: /spotify/listened_to returns incorrect data, use total_count from top/songs instead
+    const [topTracks, topArtists, topAlbums, hourData, timePer] = await Promise.all([
       this.client.get<any[]>('/spotify/top/songs', { ...apiParams, nb: 10 }),
       this.client.get<any[]>('/spotify/top/artists', { ...apiParams, nb: 10 }),
       this.client.get<any[]>('/spotify/top/albums', { ...apiParams, nb: 5 }),
-      this.client.get<any[]>('/spotify/time_per_hour_of_day', apiParams),
-      this.client.get<any[]>('/spotify/songs_per', { ...apiParams, timeSplit: 'month' }),
-      this.client.get<{ count: number }>('/spotify/listened_to', apiParams),
+      this.client.get<any[]>('/spotify/time_per', { ...apiParams, timeSplit: 'hour' }),
+      this.client.get<any[]>('/spotify/time_per', { ...apiParams, timeSplit: 'day' }),
     ]);
 
-    // Calculate totals
+    // Calculate total duration from timePer (sum of all daily durations)
     let totalDuration = 0;
-    let uniqueTracks = 0;
-    (songsPer || []).forEach((item: any) => {
-      uniqueTracks += item.differents || 0;
+    (timePer || []).forEach((item: any) => {
+      totalDuration += item.count || 0;
     });
 
-    // Transform hour data
+    // Transform hour data - aggregate by hour of day
     const listeningByHour: Record<string, number> = {};
+    for (let i = 0; i < 24; i++) listeningByHour[String(i)] = 0;
     (hourData || []).forEach((item: any) => {
-      listeningByHour[String(item._id)] = item.count || 0;
+      const hour = item._id?.hour;
+      if (hour !== undefined) {
+        listeningByHour[String(hour)] += item.count || 0;
+      }
     });
 
-    // Calculate total duration from top tracks
-    (topTracks || []).forEach((item: any) => {
-      totalDuration += (item.duration_ms || 0);
+    // Transform day data - aggregate by day name
+    const listeningByDay: Record<string, number> = {};
+    const dayNames = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+    dayNames.forEach(d => listeningByDay[d] = 0);
+    (timePer || []).forEach((item: any) => {
+      const id = item._id || {};
+      if (id.year && id.month && id.day) {
+        const date = new Date(id.year, id.month - 1, id.day);
+        const dayName = dayNames[date.getDay()];
+        listeningByDay[dayName] += item.count || 0;
+      }
     });
+
+    // Estimate unique tracks from top tracks count (best available proxy)
+    const uniqueTracks = (topTracks || []).length;
+
+    // Get total plays from top/songs total_count field (more accurate than listened_to)
+    const totalTracksPlayed = topTracks?.[0]?.total_count || 0;
 
     return {
       period: { start: params.start_date, end: params.end_date },
       total_listening_time_ms: totalDuration,
-      total_tracks_played: listenedTo?.count || 0,
+      total_tracks_played: totalTracksPlayed,
       unique_tracks: uniqueTracks,
       unique_artists: (topArtists || []).length,
       top_tracks: (topTracks || []).map((item: any) => ({
@@ -439,13 +532,13 @@ export class YourSpotifyService {
         play_count: item.count || 0,
       })),
       listening_by_hour: listeningByHour,
-      listening_by_day: {},
+      listening_by_day: listeningByDay,
     };
   }
 
   /**
    * Analyze listening timeline
-   * Uses /spotify/songs_per endpoint for accurate play counts
+   * Uses /spotify/time_per endpoint for duration data
    */
   async getListeningTimeline(params: {
     start_date?: string;
@@ -462,9 +555,9 @@ export class YourSpotifyService {
       apiParams.end = params.end_date;
     }
 
-    // Use songs_per for accurate play counts (not time_per which returns duration)
+    // time_per returns duration in ms in the count field
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const rawData = await this.client.get<any[]>('/spotify/songs_per', apiParams);
+    const rawData = await this.client.get<any[]>('/spotify/time_per', apiParams);
 
     return {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -478,10 +571,11 @@ export class YourSpotifyService {
         } else if (id.year && id.week) {
           date = `${id.year}-W${String(id.week).padStart(2, '0')}`;
         }
+        const duration = item.count || 0; // time_per returns duration_ms in count field
         return {
           date,
-          plays: item.count || 0, // songs_per returns actual play counts
-          duration_ms: (item.count || 0) * 180000, // Estimate ~3min per song
+          plays: Math.round(duration / 180000), // Estimate plays from ~3min avg song
+          duration_ms: duration,
         };
       }),
     };
@@ -508,8 +602,21 @@ export class YourSpotifyService {
       overlap_percentage: number;
     };
   }> {
+    // Validate user_ids
+    if (!params.user_ids || !Array.isArray(params.user_ids)) {
+      throw new Error('user_ids must be an array of user IDs');
+    }
+    if (params.user_ids.length < 2) {
+      throw new Error('Affinity analysis requires at least 2 user IDs');
+    }
+    // Filter out empty strings
+    const validUserIds = params.user_ids.filter(id => id && typeof id === 'string' && id.trim());
+    if (validUserIds.length < 2) {
+      throw new Error('Affinity analysis requires at least 2 valid user IDs (non-empty strings)');
+    }
+
     const apiParams: Record<string, unknown> = {
-      ids: params.user_ids.join(','),
+      ids: validUserIds.join(','),
       mode: params.mode === 'minima' ? 1 : 0, // API uses 0 for average, 1 for minima
       nb: params.limit || 20,
     };
@@ -517,10 +624,20 @@ export class YourSpotifyService {
     if (params.end_date) apiParams.end = params.end_date;
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const rawData = await this.client.get<any[]>('/spotify/collaborative/top/songs', apiParams);
+    let rawData: any[];
+    try {
+      rawData = await this.client.get<any[]>('/spotify/collaborative/top/songs', apiParams);
+    } catch (error) {
+      // Provide more helpful error for common issues
+      const message = error instanceof Error ? error.message : String(error);
+      if (message.includes('404') || message.includes('not found')) {
+        throw new Error(`Affinity analysis failed: One or more user IDs not found. Verify IDs: ${validUserIds.join(', ')}`);
+      }
+      throw new Error(`Affinity analysis failed: ${message}`);
+    }
 
     return {
-      users: params.user_ids.map(id => ({ id, username: id })),
+      users: validUserIds.map(id => ({ id, username: id })),
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       tracks: (rawData || []).map((item: any) => ({
         track: {
@@ -533,7 +650,11 @@ export class YourSpotifyService {
           uri: `spotify:track:${item.track?.id || ''}`,
         },
         score: item.count || 0,
-        play_counts: {},
+        // Populate play_counts with per-user data if available, otherwise distribute total
+        play_counts: item.play_counts || validUserIds.reduce((acc: Record<string, number>, id: string) => {
+          acc[id] = Math.round((item.count || 0) / validUserIds.length);
+          return acc;
+        }, {}),
       })),
     };
   }
@@ -566,7 +687,7 @@ export class YourSpotifyService {
    * Update user settings
    * Note: Settings updates require authenticated session, not public token
    */
-  async updateSettings(settings: {
+  async updateSettings(_settings: {
     timezone?: string;
   }): Promise<{ success: boolean; updated_settings: Record<string, unknown>; message: string }> {
     // Settings endpoint may not be available via public token
@@ -575,8 +696,8 @@ export class YourSpotifyService {
   }
 
   /**
-   * Generate a public share link
-   * Note: Token generation requires authenticated session
+   * Generate/get a public share link
+   * Returns the existing public token from the user profile
    */
   async generatePublicToken(): Promise<{
     success: boolean;
@@ -585,24 +706,42 @@ export class YourSpotifyService {
     created_at: string;
     message: string;
   }> {
-    throw new Error('Public token generation requires authenticated session. Use the Your Spotify web interface.');
+    // Get current user info which includes publicToken
+    const user = await this.getCurrentUser();
+
+    if (!user.public_token) {
+      throw new Error('No public token found. Generate one via the Your Spotify web interface first.');
+    }
+
+    // Construct the public URL (Your Spotify frontend URL)
+    const baseUrl = this.client.getBaseUrl();
+    // Replace api URL with frontend URL pattern
+    const frontendUrl = baseUrl.replace('-api', '').replace('/api', '');
+
+    return {
+      success: true,
+      public_token: user.public_token,
+      public_url: `${frontendUrl}?token=${user.public_token}`,
+      created_at: new Date().toISOString(),
+      message: `Your public share link is ready. Anyone with this link can view your listening statistics.`,
+    };
   }
 
   /**
    * Revoke public access
-   * Note: Token revocation requires authenticated session
+   * Note: Token revocation requires authenticated session - cannot be done via API
    */
   async revokePublicAccess(): Promise<{
     success: boolean;
     revoked_token: string;
     message: string;
   }> {
-    throw new Error('Public token revocation requires authenticated session. Use the Your Spotify web interface.');
+    throw new Error('Public token revocation requires an authenticated web session. Visit Your Spotify settings to revoke access.');
   }
 
   /**
    * Rename account
-   * Note: Account rename requires authenticated session
+   * Note: Account rename requires authenticated session - cannot be done via API
    */
   async renameAccount(): Promise<{
     success: boolean;
@@ -610,7 +749,7 @@ export class YourSpotifyService {
     new_username: string;
     message: string;
   }> {
-    throw new Error('Account rename requires authenticated session. Use the Your Spotify web interface.');
+    throw new Error('Account rename requires an authenticated web session. Visit Your Spotify settings to change your username.');
   }
 
   // ============================================================
@@ -641,15 +780,24 @@ export class YourSpotifyService {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const artistInfo = await this.client.get<any>(`/artist/${artistId}/stats`);
 
+    // Find this artist's play count in the results array
+    const artistPlayCount = rawData.results?.find((r: any) => r.id === artistId)?.count || 0;
+
+    // The API's results array is just a neighborhood (few nearby artists), not all artists
+    // Use index+1 as lower bound for total to ensure total >= rank
+    const rank = (rawData.index || 0) + 1;
+    const resultsLength = rawData.results?.length || 0;
+    const totalArtists = Math.max(resultsLength, rank);
+
     return {
       artist: {
         id: artistId,
         name: artistInfo.artist?.name || 'Unknown',
         genres: artistInfo.artist?.genres,
       },
-      rank: (rawData.index || 0) + 1, // API returns 0-indexed
-      total_artists: 0, // Not provided by API
-      play_count: rawData.results?.[0]?.count || 0,
+      rank,
+      total_artists: totalArtists,
+      play_count: artistPlayCount,
     };
   }
 
@@ -677,6 +825,12 @@ export class YourSpotifyService {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const trackInfo = await this.client.get<any>(`/track/${trackId}/stats`);
 
+    // The API's results array is just a neighborhood (few nearby tracks), not all tracks
+    // Use index+1 as lower bound for total to ensure total >= rank
+    const rank = (rawData.index || 0) + 1;
+    const resultsLength = rawData.results?.length || 0;
+    const totalTracks = Math.max(resultsLength, rank);
+
     return {
       track: {
         id: trackId,
@@ -687,8 +841,8 @@ export class YourSpotifyService {
         explicit: false,
         uri: `spotify:track:${trackId}`,
       },
-      rank: (rawData.index || 0) + 1, // API returns 0-indexed
-      total_tracks: 0, // Not provided by API
+      rank,
+      total_tracks: totalTracks,
       play_count: rawData.results?.find((r: any) => r.id === trackId)?.count || 0,
     };
   }
@@ -699,8 +853,7 @@ export class YourSpotifyService {
 
   /**
    * Analyze listening patterns
-   * Uses /spotify/time_per_hour_of_day for hourly patterns
-   * Uses /spotify/songs_per for daily/weekly/monthly patterns
+   * Uses /spotify/time_per endpoint with timeSplit parameter
    */
   async analyzeListeningPatterns(params: {
     pattern_type?: string;
@@ -713,35 +866,51 @@ export class YourSpotifyService {
       duration_ms: number;
     }>;
   }> {
-    const apiParams: Record<string, unknown> = {};
-    if (params.start_date) apiParams.start = params.start_date;
+    // API requires start date - default to beginning of all time if not provided
+    const apiParams: Record<string, unknown> = {
+      start: params.start_date || '2000-01-01',
+    };
     if (params.end_date) apiParams.end = params.end_date;
 
     if (params.pattern_type === 'hourly' || params.pattern_type === 'hour_of_day' || !params.pattern_type) {
-      // Get hourly patterns
+      // Get hourly patterns - aggregate all hours across the date range
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const rawData = await this.client.get<any[]>('/spotify/time_per_hour_of_day', apiParams);
+      const rawData = await this.client.get<any[]>('/spotify/time_per', {
+        ...apiParams,
+        timeSplit: 'hour',
+      });
+
+      // Aggregate by hour of day (0-23)
+      const hourTotals: Record<number, number> = {};
+      for (let i = 0; i < 24; i++) hourTotals[i] = 0;
+
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (rawData || []).forEach((item: any) => {
+        const hour = item._id?.hour;
+        if (hour !== undefined) {
+          hourTotals[hour] += item.count || 0;
+        }
+      });
 
       return {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        patterns: (rawData || []).map((item: any) => ({
-          period: `${String(item._id).padStart(2, '0')}:00`,
-          plays: Math.round((item.count || 0) / 180000), // count is duration_ms, estimate plays from ~3min avg
-          duration_ms: item.count || 0, // API returns duration in ms in the count field
+        patterns: Object.entries(hourTotals).map(([hour, duration]) => ({
+          period: `${String(hour).padStart(2, '0')}:00`,
+          plays: Math.round(duration / 180000), // Estimate plays from ~3min avg song
+          duration_ms: duration,
         })),
       };
     } else if (params.pattern_type === 'day_of_week') {
       // Compute day-of-week from daily data
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const rawData = await this.client.get<any[]>('/spotify/songs_per', {
+      const rawData = await this.client.get<any[]>('/spotify/time_per', {
         ...apiParams,
         timeSplit: 'day',
       });
 
       // Aggregate by day of week
       const dayNames = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
-      const dayTotals: Record<number, { plays: number; duration_ms: number }> = {};
-      for (let i = 0; i < 7; i++) dayTotals[i] = { plays: 0, duration_ms: 0 };
+      const dayTotals: Record<number, number> = {};
+      for (let i = 0; i < 7; i++) dayTotals[i] = 0;
 
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       (rawData || []).forEach((item: any) => {
@@ -749,16 +918,15 @@ export class YourSpotifyService {
         if (id.year && id.month && id.day) {
           const date = new Date(id.year, id.month - 1, id.day);
           const dayOfWeek = date.getDay();
-          dayTotals[dayOfWeek].plays += item.count || 0;
-          dayTotals[dayOfWeek].duration_ms += (item.count || 0) * 180000;
+          dayTotals[dayOfWeek] += item.count || 0;
         }
       });
 
       return {
         patterns: dayNames.map((name, i) => ({
           period: name,
-          plays: dayTotals[i].plays,
-          duration_ms: dayTotals[i].duration_ms,
+          plays: Math.round(dayTotals[i] / 180000),
+          duration_ms: dayTotals[i],
         })),
       };
     } else if (params.pattern_type === 'day_and_time') {
@@ -766,10 +934,21 @@ export class YourSpotifyService {
       throw new Error('day_and_time pattern requires combining hour and day data. Try hour_of_day or day_of_week separately.');
     } else {
       // Get daily/weekly/monthly patterns
+      // Map pattern_type to timeSplit value
+      const timeSplitMap: Record<string, string> = {
+        'day': 'day',
+        'daily': 'day',
+        'week': 'week',
+        'weekly': 'week',
+        'month': 'month',
+        'monthly': 'month',
+      };
+      const timeSplit = timeSplitMap[params.pattern_type || 'day'] || 'day';
+
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const rawData = await this.client.get<any[]>('/spotify/songs_per', {
+      const rawData = await this.client.get<any[]>('/spotify/time_per', {
         ...apiParams,
-        timeSplit: params.pattern_type || 'day',
+        timeSplit,
       });
 
       return {
@@ -781,11 +960,14 @@ export class YourSpotifyService {
             period = `${id.year}-${String(id.month).padStart(2, '0')}-${String(id.day).padStart(2, '0')}`;
           } else if (id.year && id.month) {
             period = `${id.year}-${String(id.month).padStart(2, '0')}`;
+          } else if (id.year && id.week) {
+            period = `${id.year}-W${String(id.week).padStart(2, '0')}`;
           }
+          const duration = item.count || 0;
           return {
             period,
-            plays: item.count || 0,
-            duration_ms: (item.count || 0) * 180000,
+            plays: Math.round(duration / 180000),
+            duration_ms: duration,
           };
         }),
       };
@@ -891,28 +1073,39 @@ export class YourSpotifyService {
       top_track?: { name: string };
     };
   }> {
-    // Fetch data for both periods in parallel
-    const [p1Songs, p1Artists, p1Count, p2Songs, p2Artists, p2Count] = await Promise.all([
+    // Fetch data for both periods in parallel (including time_per for actual duration)
+    // Note: /spotify/listened_to returns incorrect data, use total_count from top/songs instead
+    const [p1Songs, p1Artists, p1Time, p2Songs, p2Artists, p2Time] = await Promise.all([
       this.client.get<any[]>('/spotify/top/songs', { start: params.period1_start, end: params.period1_end, nb: 1 }),
       this.client.get<any[]>('/spotify/top/artists', { start: params.period1_start, end: params.period1_end, nb: 1 }),
-      this.client.get<{ count: number }>('/spotify/listened_to', { start: params.period1_start, end: params.period1_end }),
+      this.client.get<any[]>('/spotify/time_per', { start: params.period1_start, end: params.period1_end, timeSplit: 'day' }),
       this.client.get<any[]>('/spotify/top/songs', { start: params.period2_start, end: params.period2_end, nb: 1 }),
       this.client.get<any[]>('/spotify/top/artists', { start: params.period2_start, end: params.period2_end, nb: 1 }),
-      this.client.get<{ count: number }>('/spotify/listened_to', { start: params.period2_start, end: params.period2_end }),
+      this.client.get<any[]>('/spotify/time_per', { start: params.period2_start, end: params.period2_end, timeSplit: 'day' }),
     ]);
+
+    // Calculate actual duration from time_per
+    let p1DurationMs = 0;
+    (p1Time || []).forEach((item: any) => { p1DurationMs += item.count || 0; });
+    let p2DurationMs = 0;
+    (p2Time || []).forEach((item: any) => { p2DurationMs += item.count || 0; });
+
+    // Get total plays from top/songs total_count field (more accurate than listened_to)
+    const p1TotalPlays = p1Songs?.[0]?.total_count || 0;
+    const p2TotalPlays = p2Songs?.[0]?.total_count || 0;
 
     return {
       period1: {
-        total_plays: p1Count?.count || 0,
-        total_hours: Math.round((p1Count?.count || 0) * 3 / 60 * 10) / 10, // Estimate ~3min/song
+        total_plays: p1TotalPlays,
+        total_hours: Math.round((p1DurationMs / (1000 * 60 * 60)) * 10) / 10,
         unique_tracks: 0, // Would need different API call
         unique_artists: 0,
         top_artist: p1Artists?.[0] ? { name: p1Artists[0].artist?.name || 'Unknown' } : undefined,
         top_track: p1Songs?.[0] ? { name: p1Songs[0].track?.name || 'Unknown' } : undefined,
       },
       period2: {
-        total_plays: p2Count?.count || 0,
-        total_hours: Math.round((p2Count?.count || 0) * 3 / 60 * 10) / 10,
+        total_plays: p2TotalPlays,
+        total_hours: Math.round((p2DurationMs / (1000 * 60 * 60)) * 10) / 10,
         unique_tracks: 0,
         unique_artists: 0,
         top_artist: p2Artists?.[0] ? { name: p2Artists[0].artist?.name || 'Unknown' } : undefined,
@@ -943,13 +1136,25 @@ export class YourSpotifyService {
   }> {
     const start = params.start_date || '2000-01-01';
     const end = params.end_date || new Date().toISOString().split('T')[0];
-    const limit = params.limit || 50;
+    // Your Spotify API only accepts nb=1-30
+    const limit = Math.min(params.limit || 10, 30);
 
-    const [topTracks, topArtists, listenedTo] = await Promise.all([
+    // Note: /spotify/listened_to returns incorrect data, use total_count from top/songs instead
+    const [topTracks, topArtists, timePer] = await Promise.all([
       this.client.get<any[]>('/spotify/top/songs', { start, end, nb: limit }),
       this.client.get<any[]>('/spotify/top/artists', { start, end, nb: limit }),
-      this.client.get<{ count: number }>('/spotify/listened_to', { start, end }),
+      this.client.get<any[]>('/spotify/time_per', { start, end, timeSplit: 'day' }),
     ]);
+
+    // Calculate total duration from time_per (actual listening time in ms)
+    let totalDurationMs = 0;
+    (timePer || []).forEach((item: any) => {
+      totalDurationMs += item.count || 0;
+    });
+    const totalHours = Math.round((totalDurationMs / (1000 * 60 * 60)) * 10) / 10;
+
+    // Get total plays from top/songs total_count field (more accurate than listened_to)
+    const totalPlays = topTracks?.[0]?.total_count || 0;
 
     return {
       period: { start, end },
@@ -958,8 +1163,8 @@ export class YourSpotifyService {
         top_artists: topArtists || [],
       },
       summary: {
-        total_plays: listenedTo?.count || 0,
-        total_hours: Math.round((listenedTo?.count || 0) * 3 / 60 * 10) / 10,
+        total_plays: totalPlays,
+        total_hours: totalHours,
         unique_tracks: (topTracks || []).length,
         unique_artists: (topArtists || []).length,
       },

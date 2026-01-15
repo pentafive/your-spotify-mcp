@@ -7,7 +7,6 @@
 
 import { z } from 'zod';
 import { YourSpotifyService, TopTracksResponse } from '../../services/your-spotify-service.js';
-import { OutputFormat, formatOutput } from '../../lib/toon-utils.js';
 
 // ============================================================
 // Input Schema (Zod)
@@ -28,9 +27,9 @@ export const getTopTracksInputSchema = z.object({
     .number()
     .int()
     .min(1)
-    .max(50)
+    .max(30)
     .default(10)
-    .describe('Number of tracks to return (1-50). Default is 10.'),
+    .describe('Number of tracks to return (1-30). Default is 10.'),
   output_format: z
     .enum(['json', 'toon'])
     .default('toon')
@@ -100,9 +99,9 @@ Example queries:
       },
       limit: {
         type: 'integer',
-        description: 'Number of tracks to return (1-50). Default is 10.',
+        description: 'Number of tracks to return (1-30). Default is 10.',
         minimum: 1,
-        maximum: 50,
+        maximum: 30,
         default: 10,
       },
       output_format: {

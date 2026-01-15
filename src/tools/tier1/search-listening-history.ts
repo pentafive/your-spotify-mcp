@@ -36,9 +36,9 @@ export const searchListeningHistoryInputSchema = z.object({
     .number()
     .int()
     .min(1)
-    .max(50)
-    .default(20)
-    .describe('Number of results to return (1-50, default 20)'),
+    .max(30)
+    .default(10)
+    .describe('Number of results to return (1-30, default 10)'),
 });
 
 export type SearchListeningHistoryInput = z.infer<typeof searchListeningHistoryInputSchema>;
@@ -102,10 +102,10 @@ Example queries:
       },
       limit: {
         type: 'number',
-        description: 'Number of results (1-50, default 20)',
+        description: 'Number of results (1-30, default 10)',
         minimum: 1,
-        maximum: 50,
-        default: 20,
+        maximum: 30,
+        default: 10,
       },
     },
     required: ['query'],

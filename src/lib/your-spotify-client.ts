@@ -21,10 +21,24 @@ export interface YourSpotifyConfig {
   authMethod?: 'bearer' | 'query';
 }
 
-export interface YourSpotifyError {
+/**
+ * Custom error class for Your Spotify API errors.
+ * Extends Error so it works with instanceof checks and String() conversion.
+ */
+export class YourSpotifyError extends Error {
   code: string;
-  message: string;
   status: number;
+
+  constructor(message: string, status: number, code?: string) {
+    super(message);
+    this.name = 'YourSpotifyError';
+    this.code = code || `YOUR_SPOTIFY_${status}`;
+    this.status = status;
+    // Maintains proper stack trace for where error was thrown (V8 only)
+    if (Error.captureStackTrace) {
+      Error.captureStackTrace(this, YourSpotifyError);
+    }
+  }
 }
 
 export class YourSpotifyClient {
@@ -32,6 +46,7 @@ export class YourSpotifyClient {
   private limiter: Bottleneck;
   private token: string;
   private authMethod: 'bearer' | 'query';
+  private baseUrl: string;
 
   constructor(config: YourSpotifyConfig) {
     // Validate configuration
@@ -44,6 +59,7 @@ export class YourSpotifyClient {
 
     this.token = config.token;
     this.authMethod = config.authMethod || 'query'; // Default to query for public tokens
+    this.baseUrl = config.baseUrl;
 
     // Initialize axios client
     const headers: Record<string, string> = {
@@ -76,6 +92,13 @@ export class YourSpotifyClient {
       return { ...params, token: this.token };
     }
     return params || {};
+  }
+
+  /**
+   * Get the base URL for constructing public links
+   */
+  getBaseUrl(): string {
+    return this.baseUrl;
   }
 
   /**
@@ -150,7 +173,7 @@ export class YourSpotifyClient {
     if (axios.isAxiosError(error)) {
       const axiosError = error as AxiosError<{ message?: string; error?: string }>;
       const status = axiosError.response?.status || 500;
-      const message = axiosError.response?.data?.message
+      const apiMessage = axiosError.response?.data?.message
         || axiosError.response?.data?.error
         || axiosError.message
         || 'Unknown error';
@@ -167,19 +190,13 @@ export class YourSpotifyClient {
         503: 'Your Spotify service is temporarily unavailable',
       };
 
-      return {
-        code: `YOUR_SPOTIFY_${status}`,
-        message: errorMessages[status] || message,
-        status,
-      };
+      const message = errorMessages[status] || apiMessage;
+      return new YourSpotifyError(message, status);
     }
 
     // Handle non-Axios errors
-    return {
-      code: 'YOUR_SPOTIFY_UNKNOWN',
-      message: error instanceof Error ? error.message : 'Unknown error occurred',
-      status: 500,
-    };
+    const message = error instanceof Error ? error.message : 'Unknown error occurred';
+    return new YourSpotifyError(message, 500, 'YOUR_SPOTIFY_UNKNOWN');
   }
 
   /**

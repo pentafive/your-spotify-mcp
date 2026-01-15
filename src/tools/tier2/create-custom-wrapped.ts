@@ -149,10 +149,20 @@ function getPeakDay(dayData: Record<string, number>): string {
   const entries = Object.entries(dayData);
   if (entries.length === 0) return 'Unknown';
 
-  const [peakDay] = entries.reduce((max, curr) =>
+  // Find the entry with highest value
+  const [peakDay, peakValue] = entries.reduce((max, curr) =>
     curr[1] > max[1] ? curr : max
   );
 
+  // If no plays at all, return Unknown
+  if (peakValue === 0) return 'Unknown';
+
+  // Check if key is already a day name
+  if (dayNames.includes(peakDay)) {
+    return peakDay;
+  }
+
+  // Otherwise try to parse as numeric index
   const dayIndex = parseInt(peakDay, 10);
   return dayNames[dayIndex] || 'Unknown';
 }
@@ -203,9 +213,11 @@ export async function handleCreateCustomWrapped(
     throw new Error('start_date must be before end_date');
   }
 
+  // Calculate inclusive day count (Jan 1 to Jan 1 = 1 day, Jan 1 to Dec 31 = 365 days)
   const days = Math.ceil((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24)) + 1;
 
-  if (days > 365) {
+  // Allow up to 366 days to accommodate leap years and inclusive counting
+  if (days > 366) {
     throw new Error('Date range cannot exceed 365 days for custom Wrapped');
   }
 

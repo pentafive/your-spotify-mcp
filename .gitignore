@@ -29,3 +29,7 @@ coverage/
 
 # TypeScript cache
 *.tsbuildinfo
+
+# Local-only folders (not for publication)
+Archives/
+Research/

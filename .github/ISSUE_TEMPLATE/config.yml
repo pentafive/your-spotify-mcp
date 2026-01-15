@@ -1,0 +1,8 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Your Spotify Issues
+    url: https://github.com/Yooooomi/your_spotify/issues
+    about: For issues with Your Spotify itself (not this MCP server)
+  - name: MCP Protocol
+    url: https://modelcontextprotocol.io
+    about: Learn more about the Model Context Protocol

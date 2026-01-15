@@ -27,9 +27,9 @@ export const analyzeAffinityInputSchema = z.object({
     .number()
     .int()
     .min(1)
-    .max(50)
-    .default(20)
-    .describe('Number of tracks to return (1-50)'),
+    .max(30)
+    .default(10)
+    .describe('Number of tracks to return (1-30)'),
   start_date: z
     .string()
     .regex(/^\d{4}-\d{2}-\d{2}$/)
@@ -120,10 +120,10 @@ Example queries:
       },
       limit: {
         type: 'integer',
-        description: 'Number of tracks to return (1-50)',
+        description: 'Number of tracks to return (1-30)',
         minimum: 1,
-        maximum: 50,
-        default: 20,
+        maximum: 30,
+        default: 10,
       },
       start_date: {
         type: 'string',
@@ -187,6 +187,14 @@ export async function handleAnalyzeAffinity(
     start_date: input.start_date,
     end_date: input.end_date,
   });
+
+  // Validate response structure
+  if (!mockResponse || typeof mockResponse !== 'object') {
+    throw new Error('Invalid affinity analysis response: empty or invalid response');
+  }
+  if (!Array.isArray(mockResponse.tracks)) {
+    throw new Error('Invalid affinity analysis response: tracks is not an array');
+  }
 
   // Mode descriptions
   const modeDescriptions = {

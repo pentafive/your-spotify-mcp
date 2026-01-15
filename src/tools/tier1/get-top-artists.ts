@@ -27,9 +27,9 @@ export const getTopArtistsInputSchema = z.object({
     .number()
     .int()
     .min(1)
-    .max(50)
+    .max(30)
     .default(10)
-    .describe('Number of artists to return (1-50, default 10)'),
+    .describe('Number of artists to return (1-30, default 10)'),
 });
 
 export type GetTopArtistsInput = z.infer<typeof getTopArtistsInputSchema>;
@@ -89,9 +89,9 @@ Example queries:
       },
       limit: {
         type: 'number',
-        description: 'Number of artists to return (1-50, default 10)',
+        description: 'Number of artists to return (1-30, default 10)',
         minimum: 1,
-        maximum: 50,
+        maximum: 30,
         default: 10,
       },
     },
